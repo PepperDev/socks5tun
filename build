@@ -1,0 +1,48 @@
+#!/bin/sh
+
+set -e
+
+set -- \
+  gcc \
+  make \
+  musl-dev \
+  linux-headers \
+  indent
+
+if [ -e /etc/alpine-release ] && [ "$(awk '$4 == "/" && $5 == "/" { print $(NF-2); exit }' /proc/self/mountinfo)" = overlay ]; then
+  if [ ! -x /usr/bin/gcc ]; then
+    set -- apk add --no-cache "$@"
+    if [ "$(id -u)" != 0 ]; then
+      set -- sudo -- "$@"
+    fi
+    "$@"
+  fi
+else
+  exec docker run \
+    -it \
+    --rm \
+    -v "$(realpath "$(dirname "$0")"):/src" \
+    -w /src \
+    alpine \
+    sh -ec "$(
+cat <<'EOF'
+uid=$1
+gid=$2
+shift 2
+apk add --no-cache "$@"
+exec nsenter \
+  "--setuid=$1" \
+  "--setgid=$2" \
+  ./build
+EOF
+)" - "$(id -u)" "$(id -g)" "$@"
+fi
+
+find "$(readlink -f "$(dirname "$0")")" \
+	\( -name '*.c' -o -name '*.h' \) -print |
+	while read -r file; do
+	indent -linux -l120 -i4 -nut "$file" -o "${file}.new"
+	mv "${file}.new" "$file"
+done
+
+exec make

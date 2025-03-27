@@ -1,0 +1,132 @@
+#!/bin/sh
+
+set -e
+
+if [ ! -d /sys/module/tun ]; then
+  printf 'Please enable tun module first.\n' >&2
+  exit 1
+fi
+
+if [ -z "$(docker ps -qf name=tor)" ]; then
+  docker run \
+    -d \
+    --name tor \
+    --restart=unless-stopped \
+    alpine \
+    sh -ec 'apk add --no-cache tor; HOME=/tmp exec nsenter --setuid=999 --setgid=999 tor --SocksPort 0.0.0.0:9050'
+fi
+
+set --
+uid=$(id -u)
+xdg=${XDG_RUNTIME_DIR:-/run/user/$uid}
+way=${WAYLAND_DISPLAY:-wayland-0}
+if [ -S "$xdg/$way" ]; then
+  set -- \
+    -v "$xdg/$way:$xdg/$way" \
+    -e XDG_SESSION_TYPE=wayland \
+    -e "WAYLAND_DISPLAY=$way" \
+    -e "XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-wlroots}" \
+    -e "XDG_RUNTIME_DIR=$xdg" \
+    -e CLUTTER_BACKEND=wayland \
+    -e GDK_BACKEND=wayland \
+    -e SDL_VIDEODRIVER=wayland \
+    -e QT_QPA_PLATFORM=wayland-egl
+fi
+if [ -d "$xdg/pulse" ]; then
+  set -- "$@" \
+    -v "$xdg/pulse:$xdg/pulse"
+fi
+if [ -d /tmp/.X11-unix ]; then
+  set -- "$@" \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    -e "DISPLAY=${DISPLAY:-:0}"
+fi
+
+docker run \
+  -it \
+  --rm \
+  --link tor \
+  --privileged \
+  "$@" \
+  alpine \
+  sh -ec "$(
+cat <<'EOF'
+uid=$1
+gid=$2
+if [ -n "$XDG_RUNTIME_DIR" ]; then
+  install -o "$uid" -g "$gid" -m 700 -d "$XDG_RUNTIME_DIR"
+fi
+ip=$(wget -qO- http://api.ipify.org/)
+if [ -z "$ip" ]; then
+  printf 'Unable to get current IP.\n'
+  exit 1
+fi
+set --
+if [ -f /sys/class/drm/card0/device/uevent ]; then
+  case "$(sed -r '/^DRIVER=/!d;s@^DRIVER=@@;q' /sys/class/drm/card0/device/uevent)" in
+  amdgpu)
+    set -- "$@" \
+      mesa-va-gallium \
+      mesa-vulkan-ati
+  ;;
+  i915)
+    set -- "$@" \
+      intel-media-driver \
+      mesa-vulkan-intel
+  ;;
+  nouveau)
+    set -- "$@" \
+      libva-vdpau-driver \
+      mesa-vdpau-gallium \
+      mesa-vulkan-swrast
+  esac
+fi
+apk add --no-cache -q \
+  firefox \
+  font-liberation \
+  font-dejavu \
+  font-awesome \
+  font-noto-cjk \
+  font-noto-emoji \
+  mesa-dri-gallium \
+  "$@" \
+  mesa-egl \
+  mesa-gl \
+  mesa-gles \
+  tzdata \
+  musl-locales \
+  ca-certificates
+# NOTE: qt6-qtwayland is recommended when using qt apps
+if [ ! -c /dev/net/tun ]; then
+  if [ ! -d /dev/net ]; then
+    mkdir /dev/net
+  fi
+   mknod -m 666 /dev/net/tun c 10 200
+fi
+: ...
+cd /tmp
+wget https://github.com/tun2proxy/tun2proxy/releases/download/v0.7.6/tun2proxy-x86_64-unknown-linux-musl.zip
+unzip tun2proxy-x86_64-unknown-linux-musl.zip
+nohup setsid ./tun2proxy-bin \
+  --setup \
+  --dns over-tcp \
+  --ipv6-enabled \
+  --proxy socks5://tor:9050 > /dev/null 2>&1 < /dev/null &
+: ...
+printf 'Waiting new internet connection...\n' >&2
+while :; do
+  nip=$(timeout 5s wget -qO- http://api.ipify.org/ 2> /dev/null || :)
+  if [ -n "$nip" -a "$nip" != "$ip" ]; then
+    break
+  fi
+  sleep 2
+done
+install -o "$uid" -g "$gid" -m 755 -d /tmp/.h
+printf 'To browser run: firefox\n' >&2
+HOME=/tmp/.h exec nsenter \
+  --wd=/tmp/.h \
+  "--setuid=$uid" \
+  "--setgid=$gid" \
+  sh -i
+EOF
+)" - "$uid" "$(id -g)"
