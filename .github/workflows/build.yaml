@@ -1,0 +1,120 @@
+name: build
+run-name: ${{ github.event.head_commit.message }}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - master
+  workflow_dispatch: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: alpine
+    permissions:
+      id-token: write
+      actions: write
+      contents: read
+    steps:
+    - name: setup
+      run: |
+        apk add -q --no-cache \
+          git \
+          gcc \
+          make \
+          musl-dev \
+          linux-headers \
+          indent
+    - name: build
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        read -r uid gid <<EOF
+        $(stat -c '%u %g' .)
+        EOF
+        install \
+          -o "$uid" \
+          -g "$gid" \
+          -m 755 \
+          -d /tmp/.h
+        HOME=/tmp/.h \
+          exec nsenter \
+          "--setuid=$uid" \
+          "--setgid=$gid" \
+          sh -es <<'USER'
+        git clone \
+          --depth=1 \
+          "--branch=$GITHUB_REF_NAME" \
+          "${GITHUB_SERVER_URL%%://*}://x-access-token:$GITHUB_TOKEN@${GITHUB_SERVER_URL#*://}/$GITHUB_REPOSITORY" \
+          .
+        ./build
+        data=${ACTIONS_ID_TOKEN_REQUEST_TOKEN#*.}
+        data=$(printf '%s' "${data%%.*}" | tr -- '-_' '+/')
+        read -r run job <<EOF
+        $(
+          printf '%s' "$data$(
+            printf "%$(((4-${#data})%4))s" | tr ' ' '='
+          )" |
+            base64 -d |
+            sed -r '/"scp":\s*"/!d;s@^.*"scp":\s*"([^"]*).*$@\1@' |
+            tr ' ' '\n' |
+            sed -r '/^Actions.Results:/!d;s@^Actions.Results:@@;s@:@ @'
+        )
+        EOF
+        json="$(
+        cat <<EOF
+        {
+          "workflowRunBackendId": "$run",
+          "workflowJobRunBackendId": "$job",
+          "name": "socks5tun",
+          "version": 4
+        }
+        EOF
+        )"
+        url="$(
+          wget \
+            -qO- \
+            "--post-data=$json" \
+            --header "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            --header 'Content-Type: application/json' \
+            "https://results-receiver.actions.githubusercontent.com/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact" |
+            sed -r '/"signed_upload_url":\s*"/!d;s@^.*"signed_upload_url":\s*"([^"]*).*$@\1@'
+        )"
+        host=${url#http*://}
+        cat - bin/socks5tun <<EOF | sh -c 'nc "$1" 443 -e sh -c "ssl_client -s3 -I -n $1 3<&0 0<&4 >&5" 4<&0 5>&1' - "${host%%/*}" | grep -qF '201 Created'
+        PUT /${host#*/} HTTP/1.1
+        Host: ${host%%/*}
+        Content-Type: application/octet-stream
+        Content-Transfer-Encoding: binary
+        Content-Length: $(stat -c %s bin/socks5tun)
+        Connection: close
+        x-ms-blob-type: BlockBlob
+
+        EOF
+        json="$(
+        cat <<EOF
+        {
+          "workflowRunBackendId": "$run",
+          "workflowJobRunBackendId": "$job",
+          "name": "socks5tun",
+          "uploadSize": $(stat -c %s bin/socks5tun)
+        }
+        EOF
+        )"
+        id="$(
+          wget \
+            -qO- \
+            "--post-data=$json" \
+            --header "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            --header 'Content-Type: application/json' \
+            "https://results-receiver.actions.githubusercontent.com/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact" |
+            sed -r '/"artifact_id":\s*"/!d;s@^.*"artifact_id":\s*"([^"]*).*$@\1@'
+        )"
+        url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts/$id"
+        printf '## Artifacts\n* [socks5tun.amd64](%s)\n' "$url" >> "$GITHUB_STEP_SUMMARY"
+        USER

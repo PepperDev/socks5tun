@@ -3,7 +3,6 @@
 #include <string.h>             // memset memcpy
 #include <fcntl.h>              // open
 #include <linux/if.h>           // ifreq
-#include <stdbool.h>            // true
 #include <stdio.h>              // snprintf
 #include <sys/ioctl.h>          // ioctl
 #include <linux/if_tun.h>       // TUNSETIFF
@@ -21,7 +20,7 @@ const char *tun_setup(struct config *config)
         .ifr_name = "tun"
     };
     int id = 0;
-    while (true) {
+    for (;;) {
         int size = snprintf(ifr.ifr_name, IFNAMSIZ, "tun%d", id);
         if (ioctl(config->tun, TUNSETIFF, (void *)&ifr) < 0) {
             id++;

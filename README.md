@@ -34,8 +34,9 @@ We provide a script to do it with docker, if you don't use docker you can read i
 
 * Timeout UDP when there is no traffic for more than five minutes
 * Use DNS over TLS (DoT), port 853, to enhance privacy
-* User TURN over TLS port 5349 instead of 3478
+* Use TURN over TLS port 5349 instead of 3478
 * Use multi thread and queue, maching the host cores count
 * Allow custom CIDR, DNS, and TURN
-* Detect IPv6 support throught SOCKS5 automatically
+* Detect IPv6 support throught SOCKS5 automatically (try TCP 53 on Google DNS 2001:4860:4860::8888)
 * Detect UDP throught SOCKS5 before using TURN (e.g.: accessing DNS or STUN)
+* Serve UPnP and NAT-PMP for tunneling
