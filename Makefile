@@ -3,7 +3,10 @@ DESTDIR ?= /usr/local
 
 SOURCES = $(patsubst %,src/%.c, \
 		error/error_log \
+		proxy/proxy_setup \
 		tun/tun_setup \
+		route/route_setup \
+		proxy/proxy_loop \
 		main \
 	)
 

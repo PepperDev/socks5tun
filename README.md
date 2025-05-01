@@ -33,6 +33,7 @@ We provide a script to do it with docker, if you don't use docker you can read i
 ## To Do list
 
 * Timeout UDP when there is no traffic for more than five minutes
+* Cache DNS requests with 5 minutes TTL
 * Use DNS over TLS (DoT), port 853, to enhance privacy
 * Use TURN over TLS port 5349 instead of 3478
 * Use multi thread and queue, maching the host cores count
