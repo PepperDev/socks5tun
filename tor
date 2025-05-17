@@ -83,6 +83,7 @@ if [ -f /sys/class/drm/card0/device/uevent ]; then
 fi
 apk add --no-cache -q \
   firefox \
+  libpulse \
   font-liberation \
   font-dejavu \
   font-awesome \

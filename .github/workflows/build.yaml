@@ -103,7 +103,7 @@ jobs:
           "workflowJobRunBackendId": "$job",
           "name": "socks5tun",
           "uploadSize": $(stat -c %s bin/socks5tun),
-          "hash": "$(sha256sum < bin/socks5tun | head -c64)"
+          "hash": "sha256:$(sha256sum < bin/socks5tun | head -c64)"
         }
         EOF
         )"

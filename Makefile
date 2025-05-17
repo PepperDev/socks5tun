@@ -6,6 +6,7 @@ SOURCES = $(patsubst %,src/%.c, \
 		proxy/proxy_setup \
 		tun/tun_setup \
 		route/route_setup \
+		dns/dns_setup \
 		proxy/proxy_loop \
 		main \
 	)

@@ -24,7 +24,7 @@ const char *proxy_setup(struct config *config, char *proxy)
     }
     if (proxy[0] == '[' && proxy[len - 1] == ']') {
         proxy[len - 1] = 0;
-        proxy = proxy + 1;
+        proxy++;
     }
     struct addrinfo *res;
     if (getaddrinfo(proxy, port, NULL, &res)) {
@@ -32,7 +32,7 @@ const char *proxy_setup(struct config *config, char *proxy)
     }
     if (!res || (res->ai_family != AF_INET && res->ai_family != AF_INET6)) {
         freeaddrinfo(res);
-        return "Unknown proxy family\n.";
+        return "Unknown proxy family.\n";
     }
     size_t size;
     if (res->ai_family == AF_INET6) {
